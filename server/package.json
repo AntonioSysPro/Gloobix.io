@@ -1,0 +1,12 @@
+{
+  "name": "blobio-server",
+  "version": "1.0.0",
+  "description": "Servidor para el juego Blob.io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.1"
+  }
+}

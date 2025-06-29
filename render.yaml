@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gloobix-io
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+    
+    # Puerto por defecto para Node.js en Render
+    # Render expone el puerto en process.env.PORT
+    # El server.js debe usar process.env.PORT o 3000 por defecto

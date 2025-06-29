@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gloobix.io</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="loadingScreen" class="loading-screen hidden">
+        <div class="loading-cells">
+            <div class="cell cell1"></div>
+            <div class="cell cell2"></div>
+            <div class="cell cell3"></div>
+            <div class="cell cell4"></div>
+            <div class="cell cell5"></div>
+        </div>
+        <div class="loading-text">Cargando...</div>
+        <div class="loading-tip">Tip: <span id="randomTip">Usa Espacio para dividirte y W para expulsar masa</span>
+        </div>
+    </div>
+
+    <!-- Joystick y botones móviles -->
+    <div id="mobileControls" class="mobile-controls hidden">
+        <div id="joystickContainer">
+            <div id="joystickBase">
+                <div id="joystickStick"></div>
+            </div>
+        </div>
+        <div class="mobile-buttons">
+            <button id="splitBtn" class="mobile-btn">Dividir</button>
+            <button id="ejectBtn" class="mobile-btn">Expulsar</button>
+        </div>
+    </div>
+
+    <div class="cursor-bolita"></div>
+
+    <div id="menuPrincipal" class="menu-principal">
+        <div class="menu-contenido">
+            <h1>Gloobix.io</h1>
+
+            <div class="menu-section">
+                <input type="text" id="nombreJugador" value="No me mates!" placeholder="Tu nombre" maxlength="15"
+                    aria-label="Nombre del jugador" title="Nombre del jugador">
+
+                <div class="opcion">
+                    <label for="modoJuego">Modo de juego:</label>
+                    <select id="modoJuego" aria-labelledby="modoJuegoLabel" aria-describedby="modoJuegoDesc"
+                        title="Modo de juego">
+                        <option value="ffa">FFA (Todos contra todos)</option>
+                        <option value="equipos">Equipos</option>
+                        <option value="experimental">Experimental</option>
+                        <option value="party">Party (Privado)</option>
+                        <option value="clasico">Modo Normal</option>
+                        <option value="batalla">Rey del Mapa</option>
+                        <option value="equipo">Guerra de Equipos</option>
+                        <option value="supervivencia">Último en Pie</option>
+                        <option value="SelfFeed">Entrenamiento Solo</option>
+                    </select>
+                </div>
+
+                <div class="opcion">
+                    <button id="abrirSkinsBtn" class="boton-jugar" type="button">Ver todas las Skins</button>
+                </div>
+                <!-- Submenú de skins visual -->
+                <div id="skinsSubmenu" class="hidden">
+                    <div class="skins-modal">
+                        <div class="skins-modal-header">
+                            <h2 class="skins-modal-title">Todas las Skins</h2>
+                            <button id="cerrarSkinsBtn" class="skins-modal-close">Cerrar</button>
+                        </div>
+                        <input id="buscadorSkins" type="text" placeholder="Buscar skin...">
+                        <div id="skinsGrid"></div>
+                        <div class="skins-modal-footer">
+                            <span id="skinSeleccionadaTexto"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <div class="progreso-panel">
+                    <div class="nivel-info">
+                        <span>Nivel <span id="nivelActual">1</span></span>
+                        <div class="barra-progreso">
+                            <div id="progresoNivel" class="progreso"></div>
+                        </div>
+                        <span id="expActual">0 / 1000 XP</span>
+                    </div>
+                    <div class="stats-jugador">
+                        <div>🏆 Victorias: <span id="victorias">0</span></div>
+                        <div>⭐ Mejor puntuación: <span id="mejorPuntuacion">0</span></div>
+                        <div>⚔️ Enemigos comidos: <span id="enemigosDerrotados">0</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <div class="ajustes">
+                    <h3>Ajustes</h3>
+                    <div class="opcion">
+                        <label for="mostrarMasa">Mostrar masa</label>
+                        <input type="checkbox" id="mostrarMasa" checked title="Mostrar masa">
+                    </div>
+                    <div class="opcion">
+                        <label for="mostrarLineas">Mostrar lineas</label>
+                        <input type="checkbox" id="mostrarLineas" checked title="Mostrar lineas">
+                    </div>
+                    <div class="opcion">
+                        <label for="mostrarBordes">Mostrar bordes</label>
+                        <input type="checkbox" id="mostrarBordes" checked title="Mostrar bordes">
+                    </div>
+                    <div class="opcion">
+                        <label for="temaOscuro">Tema oscuro</label>
+                        <input type="checkbox" id="temaOscuro" checked title="Tema oscuro">
+                    </div>
+                    <div class="opcion">
+                        <label for="efectosVisuales">Efectos visuales</label>
+                        <input type="checkbox" id="efectosVisuales" checked title="Efectos visuales">
+                    </div>
+                </div>
+            </div>
+
+            <button id="jugarBtn" class="boton-jugar">¡JUGAR!</button>
+
+            <div class="controles">
+                <p>🖱️ Mouse: Moverse</p>
+                <p>⚡ W: Expulsar masa</p>
+                <p>⌨️ Espacio: Dividirse</p>
+                <p>🔴 Z: Menú</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameContainer" class="hidden">
+        <div id="chat-container">
+            <div id="chat-messages"></div>
+            <div id="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Presiona Enter para enviar..." maxlength="100">
+            </div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <!-- Diálogo de muerte -->
+    <div id="deathDialog" class="death-dialog hidden">
+        <div class="death-content">
+            <h2>¡Has muerto!</h2>
+            <div class="dialog-buttons">
+                <button id="revivirBtn">Volver a jugar</button>
+                <button id="salirMenuBtn">Salir al menú principal</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+    <script src="game.js"></script>
+    <script>
+    // Mostrar controles móviles solo en dispositivos móviles
+    document.addEventListener('DOMContentLoaded', function() {
+        var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        var mobileControls = document.getElementById('mobileControls');
+        if (mobileControls) {
+            if (isMobile) {
+                mobileControls.classList.remove('hidden');
+            } else {
+                mobileControls.classList.add('hidden');
+            }
+        }
+    });
+    // Pantalla completa al presionar cualquier parte de la pantalla
+    function openFullscreen() {
+        const elem = document.body;
+        if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { /* Safari */
+            elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) { /* IE11 */
+            elem.msRequestFullscreen();
+        }
+    }
+    document.addEventListener('click', openFullscreen, { once: true });
+    document.addEventListener('touchstart', openFullscreen, { once: true });
+    </script>
+</body>
+
+</html>
