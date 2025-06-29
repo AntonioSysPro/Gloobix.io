@@ -53,6 +53,23 @@ window.addEventListener('DOMContentLoaded', function() {
         if (enemigosDerrotados) enemigosDerrotados.textContent = localStorage.getItem('enemigosDerrotados') || '0';
     }
     cargarProgreso();
+    // Actualizar progreso al mostrar menú o revivir
+    document.addEventListener('DOMContentLoaded', function() {
+        const deathDialog = document.getElementById('deathDialog');
+        const menuPrincipal = document.getElementById('menuPrincipal');
+        if (deathDialog && menuPrincipal) {
+            deathDialog.addEventListener('transitionend', function() {
+                if (deathDialog.classList.contains('hidden')) {
+                    cargarProgreso();
+                }
+            });
+            menuPrincipal.addEventListener('transitionend', function() {
+                if (!menuPrincipal.classList.contains('hidden')) {
+                    cargarProgreso();
+                }
+            });
+        }
+    });
 
     function renderSkinsGrid(filtro = '') {
         skinsGrid.innerHTML = '';

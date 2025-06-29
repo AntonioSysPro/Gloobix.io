@@ -45,14 +45,15 @@ class Game {
         window.addEventListener('resize', () => this.setupCanvas());
         this.userZoom = 1;
         this.lastZoomChange = 0;
-        this.zoomMax = 2.2;
-        this.zoomMin = 0.15;
+        this.zoomMax = 1.1; // Limitar el zoom máximo para que no se vea todo el mapa
+        this.zoomMin = 0.35; // Limitar el zoom mínimo para evitar ver demasiado
         this.zoomRecommended = 1;
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            let delta = e.deltaY > 0 ? -0.13 : 0.13;
-            this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom + delta));
-            this.lastZoomChange = Date.now();
+            // Deshabilitar zoom manual, solo permitir zoom automático
+            // let delta = e.deltaY > 0 ? -0.13 : 0.13;
+            // this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom + delta));
+            // this.lastZoomChange = Date.now();
         }, { passive: false });
     }
 
@@ -142,9 +143,29 @@ class Game {
     showDeathDialog() {
         const deathDialog = document.getElementById('deathDialog');
         deathDialog.classList.remove('hidden');
+        // Ocultar el canvas del juego para evitar congelamiento visual
+        if (this.gameContainer) {
+            this.gameContainer.classList.add('hidden');
+        }
+        // Guardar estadísticas al morir
         if (window.playerProgress) {
             const experienciaPorPartida = 50;
             window.playerProgress.addExperiencia(experienciaPorPartida);
+        }
+        // Actualizar estadísticas en localStorage
+        const masaFinal = this.players[this.playerId]?.mass || 0;
+        const mejorPuntuacion = parseInt(localStorage.getItem('mejorPuntuacion') || '0', 10);
+        if (masaFinal > mejorPuntuacion) {
+            localStorage.setItem('mejorPuntuacion', Math.floor(masaFinal));
+        }
+        let enemigos = parseInt(localStorage.getItem('enemigosDerrotados') || '0', 10);
+        enemigos += this.players[this.playerId]?.enemigosDerrotados || 0;
+        localStorage.setItem('enemigosDerrotados', enemigos);
+        // Si el jugador fue el último en pie, sumar victoria
+        if (this.isWinner) {
+            let victorias = parseInt(localStorage.getItem('victorias') || '0', 10);
+            victorias++;
+            localStorage.setItem('victorias', victorias);
         }
         document.getElementById('revivirBtn').onclick = () => {
             deathDialog.classList.add('hidden');
@@ -153,10 +174,13 @@ class Game {
             this.gameContainer.classList.remove('hidden');
             this.isDead = false;
             this.activePowerUps = {};
-            const playerName = document.getElementById('nombreJugador').value.trim() || 'Jugador';
-            const modoJuego = document.getElementById('modoJuego') ? document.getElementById('modoJuego').value : 'clasico';
-            const skin = window.getSkinSeleccionada ? window.getSkinSeleccionada() : 'dragons.jpg';
-            this.socket.emit('join', { name: playerName, mode: modoJuego, skin });
+            // Reiniciar jugador desde cero
+            this.socket.emit('join', {
+                name: document.getElementById('nombreJugador').value.trim() || 'Jugador',
+                mode: document.getElementById('modoJuego') ? document.getElementById('modoJuego').value : 'clasico',
+                skin: window.getSkinSeleccionada ? window.getSkinSeleccionada() : 'dragons.jpg',
+                reset: true // para que el servidor lo trate como nuevo
+            });
         };
         document.getElementById('salirMenuBtn').onclick = () => {
             deathDialog.classList.add('hidden');
@@ -288,15 +312,19 @@ class Game {
     }
 
     gameLoop() {
-        if (this.lastMouseScreen && this.isConnected && !this.isDead) {
-            const pixelRatio = window.devicePixelRatio || 1;
-            const mouseX = (this.lastMouseScreen.x / this.camera.zoom / pixelRatio) + this.camera.x;
-            const mouseY = (this.lastMouseScreen.y / this.camera.zoom / pixelRatio) + this.camera.y;
-            this.socket.emit('move', { x: mouseX, y: mouseY });
-        }
-        this.render();
-        requestAnimationFrame(this.gameLoop.bind(this));
+    if (this.isDead) return; // Detener el loop si está muerto
+
+    if (this.lastMouseScreen && this.isConnected) {
+        const pixelRatio = window.devicePixelRatio || 1;
+        const mouseX = (this.lastMouseScreen.x / this.camera.zoom / pixelRatio) + this.camera.x;
+        const mouseY = (this.lastMouseScreen.y / this.camera.zoom / pixelRatio) + this.camera.y;
+        this.socket.emit('move', { x: mouseX, y: mouseY });
     }
+
+    this.render();
+    requestAnimationFrame(this.gameLoop.bind(this));
+}
+
 
     render() {
         const WORLD_WIDTH = 4000;
@@ -316,12 +344,11 @@ class Game {
                 const centerX = sumX / totalMass;
                 const centerY = sumY / totalMass;
                 const maxRadius = Math.max(...player.cells.map(c => c.radius));
-                recommendedZoom = Math.max(minZoom, Math.min(maxZoom, Math.min(this.canvas.width, this.canvas.height) / (2.5 * maxRadius)));
-                this.zoomRecommended = recommendedZoom;
-                if (Date.now() - this.lastZoomChange > 2000) {
-                    this.userZoom += (recommendedZoom - this.userZoom) * 0.12;
-                }
-                this.userZoom = Math.max(minZoom, Math.min(maxZoom, this.userZoom));
+                // Zoom automático estricto estilo Agar.io
+                let autoZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, Math.min(this.canvas.width, this.canvas.height) / (2.5 * Math.max(...player.cells.map(c => c.radius)))));
+                this.zoomRecommended = autoZoom;
+                this.userZoom += (autoZoom - this.userZoom) * 0.18;
+                this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom));
                 this.camera.zoom = this.userZoom;
                 const width = this.canvas.width / this.camera.zoom;
                 const height = this.canvas.height / this.camera.zoom;
