@@ -108,20 +108,20 @@ function createCell(x, y, mass, color, skin) {
 function generarPosicionSpawnSegura(mundo, radioMinimo = 50) {
   const maxIntentos = 50;
   let intentos = 0;
-  
+
   while (intentos < maxIntentos) {
     const x = radioMinimo + Math.random() * (WORLD_WIDTH - 2 * radioMinimo);
     const y = radioMinimo + Math.random() * (WORLD_HEIGHT - 2 * radioMinimo);
-    
+
     let posicionSegura = true;
-    
+
     // Verificar colisión con otros jugadores
     for (const jugador of Object.values(mundo.players)) {
       if (jugador.cells && jugador.cells.length > 0) {
         for (const celula of jugador.cells) {
           const distancia = Math.sqrt((x - celula.x) ** 2 + (y - celula.y) ** 2);
           const distanciaMinima = radioMinimo + celula.radius + 100; // Margen de seguridad
-          
+
           if (distancia < distanciaMinima) {
             posicionSegura = false;
             break;
@@ -130,25 +130,25 @@ function generarPosicionSpawnSegura(mundo, radioMinimo = 50) {
         if (!posicionSegura) break;
       }
     }
-    
+
     // Verificar colisión con bots
     for (const bot of mundo.bots) {
       const distancia = Math.sqrt((x - bot.x) ** 2 + (y - bot.y) ** 2);
       const distanciaMinima = radioMinimo + bot.radius + 80;
-      
+
       if (distancia < distanciaMinima) {
         posicionSegura = false;
         break;
       }
     }
-    
+
     if (posicionSegura) {
       return { x, y };
     }
-    
+
     intentos++;
   }
-  
+
   // Si no se encuentra posición segura, usar una posición aleatoria básica
   return {
     x: radioMinimo + Math.random() * (WORLD_WIDTH - 2 * radioMinimo),
@@ -168,10 +168,10 @@ function respawnearJugador(mundo, jugador) {
     jugador.color,
     jugador.skin
   );
-  
+
   jugador.cells = [nuevaCelula];
   jugador.activePowerUps = {};
-  
+
   return jugador;
 }
 
@@ -273,31 +273,36 @@ function gameLoop() {
             cell.canMerge = true;
           }
         }
-        // Virus (solo experimental): si una célula grande toca un virus, se divide
+        // Virus (solo experimental): si una célula grande toca un virus, se divide respetando límite
         if (modo === 'experimental' && mundo.virus) {
           mundo.virus.forEach(virus => {
             if (distance(cell, virus) < cell.radius + virus.radius && cell.mass > 7000) {
-              // Divide la célula en 4 partes
-              for (let k = 0; k < 4; k++) {
-                const angle = (Math.PI * 2 * k) / 4;
-                const splitMass = cell.mass / 4;
-                const newCell = createCell(
-                  cell.x + Math.cos(angle) * (cell.radius + 40),
-                  cell.y + Math.sin(angle) * (cell.radius + 40),
-                  splitMass,
-                  cell.color,
-                  player.skin
-                );
-                newCell.vx = Math.cos(angle) * 10;
-                newCell.vy = Math.sin(angle) * 10;
-                newCell.impulseFrames = 8;
-                newCell.canMerge = false;
-                newCell.mergeTimer = 10000;
-                player.cells.push(newCell);
+              const MAX_CELLS = 12;
+              const cellsToAdd = Math.min(4, MAX_CELLS - player.cells.length + 1); // +1 porque eliminamos la original
+              
+              if (cellsToAdd > 0) {
+                // Divide la célula en partes (máximo 4, respetando límite)
+                for (let k = 0; k < cellsToAdd; k++) {
+                  const angle = (Math.PI * 2 * k) / cellsToAdd;
+                  const splitMass = cell.mass / cellsToAdd;
+                  const newCell = createCell(
+                    cell.x + Math.cos(angle) * (cell.radius + 40),
+                    cell.y + Math.sin(angle) * (cell.radius + 40),
+                    splitMass,
+                    cell.color,
+                    player.skin
+                  );
+                  newCell.vx = Math.cos(angle) * 10;
+                  newCell.vy = Math.sin(angle) * 10;
+                  newCell.impulseFrames = 8;
+                  newCell.canMerge = false;
+                  newCell.mergeTimer = 10000;
+                  player.cells.push(newCell);
+                }
+                // Eliminar la célula original y el virus
+                player.cells = player.cells.filter(c => c !== cell);
+                mundo.virus = mundo.virus.filter(v => v !== virus);
               }
-              // Eliminar la célula original y el virus
-              player.cells = player.cells.filter(c => c !== cell);
-              mundo.virus = mundo.virus.filter(v => v !== virus);
             }
           });
         }
@@ -443,31 +448,45 @@ function gameLoop() {
         }
       }
     });
-    // Colisiones entre jugadores
+    // Colisiones entre jugadores con sistema de estadísticas
     const playerList = Object.values(mundo.players);
     for (let i = 0; i < playerList.length; i++) {
       for (let j = 0; j < playerList.length; j++) {
         if (i !== j) {
           const a = playerList[i];
           const b = playerList[j];
-          
+
           // Equipos del mismo color no pueden comerse entre sí
           if ((modo === 'equipos' || modo === 'equipo') && a.team && b.team && a.team === b.team) {
             continue;
           }
-          
+
           // Party: solo colisionan si tienen el mismo partyId o ambos no tienen partyId
           if (a.mode === 'party' && b.mode === 'party') {
             if (a.partyId && b.partyId && a.partyId !== b.partyId) continue;
           }
-          
+
           a.cells.forEach(cellA => {
             b.cells.forEach(cellB => {
               // Si el defensor tiene escudo, no puede ser comido
               if (cellB.shielded) return;
               if (cellA.mass > cellB.mass * 1.15 && distance(cellA, cellB) < cellA.radius) {
-                cellA.mass += cellB.mass;
+                const masaGanada = cellB.mass;
+                cellA.mass += masaGanada;
                 cellA.radius = Math.sqrt(cellA.mass / Math.PI);
+
+                // Incrementar estadísticas del atacante
+                if (!a.stats) a.stats = { enemigosDerrotados: 0, masaConsumida: 0 };
+                a.stats.enemigosDerrotados++;
+                a.stats.masaConsumida += masaGanada;
+
+                // Notificar al cliente sobre las estadísticas actualizadas
+                io.to(a.id).emit('statsUpdate', {
+                  enemigosDerrotados: a.stats.enemigosDerrotados,
+                  masaConsumida: a.stats.masaConsumida,
+                  experienciaGanada: Math.floor(masaGanada / 100)
+                });
+
                 b.cells = b.cells.filter(c => c !== cellB);
               }
             });
@@ -475,34 +494,75 @@ function gameLoop() {
         }
       }
     }
-    
+
     // Respawnear jugadores que han perdido todas sus células
     Object.keys(mundo.players).forEach(pid => {
       const jugador = mundo.players[pid];
       if (jugador.cells.length === 0) {
+        // Enviar estadísticas finales antes del respawn
+        const masaFinal = jugador.stats ? jugador.stats.masaConsumida : 0;
+        const enemigosDerrotados = jugador.stats ? jugador.stats.enemigosDerrotados : 0;
+
+        io.to(pid).emit('gameOver', {
+          masaFinal: masaFinal,
+          enemigosDerrotados: enemigosDerrotados,
+          experienciaTotal: Math.floor(masaFinal / 50) + (enemigosDerrotados * 10),
+          tiempoSobrevivido: Date.now() - (jugador.startTime || Date.now())
+        });
+
         respawnearJugador(mundo, jugador);
+
+        // Reiniciar estadísticas
+        jugador.stats = { enemigosDerrotados: 0, masaConsumida: 0 };
+        jugador.startTime = Date.now();
       }
     });
+    // Modo Rey del Mapa - Victoria por masa
     if (playerList.some(p => p.mode === 'batalla' && p.cells.reduce((acc, c) => acc + c.mass, 0) > 50000)) {
       const ganador = playerList.find(p => p.mode === 'batalla' && p.cells.reduce((acc, c) => acc + c.mass, 0) > 50000);
       if (ganador) {
         io.emit('chatMessage', { name: 'Sistema', msg: `¡${ganador.name} es el Rey del Mapa!` });
+
+        // Otorgar victoria al ganador
+        io.to(ganador.id).emit('victory', {
+          tipo: 'Rey del Mapa',
+          experienciaBonus: 500,
+          masaFinal: ganador.cells.reduce((acc, c) => acc + c.mass, 0)
+        });
+
         mundo.foods = Array.from({ length: FOOD_COUNT }, createFood);
         mundo.bots = Array.from({ length: BOT_COUNT }, createBot);
         mundo.powerUps = Array.from({ length: POWERUP_COUNT }, createPowerUp);
         Object.values(mundo.players).forEach(p => {
-          p.cells = [createCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, 3800, p.color, p.skin)];
+          const posicionSpawn = generarPosicionSpawnSegura(mundo);
+          p.cells = [createCell(posicionSpawn.x, posicionSpawn.y, 3800, p.color, p.skin)];
+          p.stats = { enemigosDerrotados: 0, masaConsumida: 0 };
+          p.startTime = Date.now();
         });
       }
     }
+
+    // Modo Último en Pie - Victoria por supervivencia
     const vivos = playerList.filter(p => p.mode === 'supervivencia' && p.cells.length > 0);
-    if (vivos.length === 1) {
-      io.emit('chatMessage', { name: 'Sistema', msg: `¡${vivos[0].name} es el Último en Pie!` });
+    if (vivos.length === 1 && playerList.filter(p => p.mode === 'supervivencia').length > 1) {
+      const ganador = vivos[0];
+      io.emit('chatMessage', { name: 'Sistema', msg: `¡${ganador.name} es el Último en Pie!` });
+
+      // Otorgar victoria al superviviente
+      io.to(ganador.id).emit('victory', {
+        tipo: 'Último en Pie',
+        experienciaBonus: 300,
+        tiempoSobrevivido: Date.now() - (ganador.startTime || Date.now())
+      });
+
       mundo.foods = Array.from({ length: FOOD_COUNT }, createFood);
       mundo.bots = Array.from({ length: BOT_COUNT }, createBot);
       mundo.powerUps = Array.from({ length: POWERUP_COUNT }, createPowerUp);
       Object.values(mundo.players).forEach(p => {
-        p.cells = [createCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, 3800, p.color, p.skin)];
+        const posicionSpawn = generarPosicionSpawnSegura(mundo);
+        p.cells = [createCell(posicionSpawn.x, posicionSpawn.y, 3800, p.color, p.skin)];
+        p.stats = { enemigosDerrotados: 0, masaConsumida: 0 };
+        p.startTime = Date.now();
       });
     }
     while (mundo.foods.length < FOOD_COUNT) mundo.foods.push(createFood());
@@ -544,31 +604,31 @@ io.on('connection', (socket) => {
         .trim()
         .replace(/\s{2,}/g, ' ') // Reemplazar múltiples espacios consecutivos por uno solo
         .substring(0, 15);
-      
+
       // Si el nombre queda vacío después de la limpieza, usar nombre por defecto
       if (!nombre || nombre.length === 0) {
         nombre = 'Jugador';
       }
     }
-    
+
     let skin = typeof data.skin === 'string' ? data.skin : '';
     const color = randomColor();
-    
+
     // Lógica de equipos y party
     let team = null;
     if (modo === 'equipos' || modo === 'equipo') {
       team = Math.random() < 0.5 ? 'rojo' : 'azul';
     }
-    
+
     // Party: asignar una partyId si se provee
     let partyId = null;
     if (modo === 'party' && typeof data.partyId === 'string') {
       partyId = data.partyId;
     }
-    
+
     // Generar posición de spawn segura
     const posicionSpawn = generarPosicionSpawnSegura(mundo);
-    
+
     mundo.players[socket.id] = {
       id: socket.id,
       name: nombre,
@@ -579,7 +639,9 @@ io.on('connection', (socket) => {
       partyId: partyId,
       target: null,
       cells: [createCell(posicionSpawn.x, posicionSpawn.y, 3800, color, skin)],
-      activePowerUps: {}
+      activePowerUps: {},
+      stats: { enemigosDerrotados: 0, masaConsumida: 0 },
+      startTime: Date.now()
     };
     socket.modo = modo;
     socket.partyId = partyId;
@@ -596,9 +658,14 @@ io.on('connection', (socket) => {
     const mundo = mundos[modo];
     const player = mundo.players[socket.id];
     if (player && data && typeof data.x === 'number' && typeof data.y === 'number') {
+      // Límite máximo de 12 células por jugador
+      const MAX_CELLS = 12;
+      const MIN_SPLIT_MASS = 1200;
+      
       let newCells = [];
       player.cells.forEach(cell => {
-        if (cell.mass >= 1200) {
+        // Solo dividir si no se excede el límite y la célula tiene masa suficiente
+        if (cell.mass >= MIN_SPLIT_MASS && (player.cells.length + newCells.length) < MAX_CELLS) {
           // Calcular ángulo real hacia el mouse
           const dx = data.x - cell.x;
           const dy = data.y - cell.y;

@@ -95,6 +95,19 @@ class Game {
                 this.ping = Date.now() - timestamp;
             }
         });
+        
+        // Eventos de estadísticas y progreso
+        this.socket.on('statsUpdate', (data) => {
+            this.actualizarEstadisticas(data);
+        });
+        
+        this.socket.on('gameOver', (data) => {
+            this.manejarGameOver(data);
+        });
+        
+        this.socket.on('victory', (data) => {
+            this.manejarVictoria(data);
+        });
     }
 
     handlePowerUpPickup() {
@@ -175,6 +188,171 @@ class Game {
         // Reconectar socket para futuras partidas
         this.socket = io();
         this.setupSocketEvents();
+    }
+
+    /**
+     * Actualiza las estadísticas del jugador en tiempo real
+     */
+    actualizarEstadisticas(data) {
+        if (data.experienciaGanada) {
+            this.agregarExperiencia(data.experienciaGanada);
+        }
+        
+        // Actualizar estadísticas en localStorage
+        if (data.enemigosDerrotados) {
+            const enemigosTotales = parseInt(localStorage.getItem('enemigosDerrotados') || '0') + 1;
+            localStorage.setItem('enemigosDerrotados', enemigosTotales.toString());
+        }
+        
+        // Actualizar mejor puntuación si es necesaria
+        if (data.masaConsumida) {
+            const mejorPuntuacion = parseInt(localStorage.getItem('mejorPuntuacion') || '0');
+            if (data.masaConsumida > mejorPuntuacion) {
+                localStorage.setItem('mejorPuntuacion', Math.floor(data.masaConsumida).toString());
+            }
+        }
+        
+        // Mostrar notificación de progreso
+        this.mostrarNotificacionProgreso(data);
+    }
+
+    /**
+     * Maneja el evento de game over y actualiza estadísticas finales
+     */
+    manejarGameOver(data) {
+        // Agregar experiencia total de la partida
+        if (data.experienciaTotal) {
+            this.agregarExperiencia(data.experienciaTotal);
+        }
+        
+        // Actualizar mejor puntuación
+        if (data.masaFinal) {
+            const mejorPuntuacion = parseInt(localStorage.getItem('mejorPuntuacion') || '0');
+            if (data.masaFinal > mejorPuntuacion) {
+                localStorage.setItem('mejorPuntuacion', Math.floor(data.masaFinal).toString());
+            }
+        }
+        
+        // Actualizar enemigos derrotados
+        if (data.enemigosDerrotados) {
+            const enemigosTotales = parseInt(localStorage.getItem('enemigosDerrotados') || '0') + data.enemigosDerrotados;
+            localStorage.setItem('enemigosDerrotados', enemigosTotales.toString());
+        }
+    }
+
+    /**
+     * Maneja las victorias y otorga bonificaciones
+     */
+    manejarVictoria(data) {
+        // Incrementar victorias
+        const victorias = parseInt(localStorage.getItem('victorias') || '0') + 1;
+        localStorage.setItem('victorias', victorias.toString());
+        
+        // Agregar experiencia bonus
+        if (data.experienciaBonus) {
+            this.agregarExperiencia(data.experienciaBonus);
+        }
+        
+        // Mostrar notificación de victoria
+        this.mostrarNotificacionVictoria(data);
+    }
+
+    /**
+     * Agrega experiencia y actualiza el nivel
+     */
+    agregarExperiencia(cantidad) {
+        const expActual = parseInt(localStorage.getItem('exp') || '0');
+        const nuevaExp = expActual + cantidad;
+        localStorage.setItem('exp', nuevaExp.toString());
+        
+        // Verificar subida de nivel
+        const nivelAnterior = Math.floor(expActual / 1000) + 1;
+        const nivelNuevo = Math.floor(nuevaExp / 1000) + 1;
+        
+        if (nivelNuevo > nivelAnterior) {
+            this.mostrarNotificacionNivel(nivelNuevo);
+        }
+    }
+
+    /**
+     * Muestra notificación de progreso en pantalla
+     */
+    mostrarNotificacionProgreso(data) {
+        if (!data.experienciaGanada) return;
+        
+        const notificacion = document.createElement('div');
+        notificacion.style.cssText = `
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            background: linear-gradient(135deg, #00ff85, #00fff7);
+            color: #000;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            z-index: 10000;
+            animation: slideInRight 0.5s ease, fadeOut 0.5s ease 2s forwards;
+            box-shadow: 0 0 20px rgba(0, 255, 133, 0.5);
+        `;
+        notificacion.textContent = `+${data.experienciaGanada} XP`;
+        
+        document.body.appendChild(notificacion);
+        setTimeout(() => notificacion.remove(), 2500);
+    }
+
+    /**
+     * Muestra notificación de subida de nivel
+     */
+    mostrarNotificacionNivel(nivel) {
+        const notificacion = document.createElement('div');
+        notificacion.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #ffe600, #ff00e6);
+            color: #000;
+            padding: 20px 30px;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 1.5em;
+            z-index: 10000;
+            animation: levelUp 3s ease forwards;
+            box-shadow: 0 0 30px rgba(255, 230, 0, 0.8);
+            text-align: center;
+        `;
+        notificacion.innerHTML = `🎉 ¡NIVEL ${nivel}! 🎉`;
+        
+        document.body.appendChild(notificacion);
+        setTimeout(() => notificacion.remove(), 3000);
+    }
+
+    /**
+     * Muestra notificación de victoria
+     */
+    mostrarNotificacionVictoria(data) {
+        const notificacion = document.createElement('div');
+        notificacion.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #ff3860, #ffe600);
+            color: #fff;
+            padding: 25px 35px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.8em;
+            z-index: 10000;
+            animation: victory 4s ease forwards;
+            box-shadow: 0 0 40px rgba(255, 56, 96, 0.8);
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        `;
+        notificacion.innerHTML = `🏆 ¡VICTORIA! 🏆<br><span style="font-size:0.6em;">${data.tipo}</span><br><span style="font-size:0.5em;">+${data.experienciaBonus} XP Bonus</span>`;
+        
+        document.body.appendChild(notificacion);
+        setTimeout(() => notificacion.remove(), 4000);
     }
 
     /**
@@ -283,16 +461,21 @@ class Game {
                 return;
             }
             
-            // Tecla Espacio - Dividir célula (solo si no está en un input)
+            // Tecla Espacio - Dividir célula (solo si no está en un input y no excede límite)
             if (e.code === 'Space' && !this.isInputFocused()) {
                 e.preventDefault();
-                let mouseX = 0, mouseY = 0;
-                if (this.lastMouseScreen) {
-                    const pixelRatio = window.devicePixelRatio || 1;
-                    mouseX = (this.lastMouseScreen.x / this.camera.zoom / pixelRatio) + this.camera.x;
-                    mouseY = (this.lastMouseScreen.y / this.camera.zoom / pixelRatio) + this.camera.y;
+                
+                // Verificar límite de células antes de dividir
+                const player = this.players[this.playerId];
+                if (player && player.cells && player.cells.length < 12) {
+                    let mouseX = 0, mouseY = 0;
+                    if (this.lastMouseScreen) {
+                        const pixelRatio = window.devicePixelRatio || 1;
+                        mouseX = (this.lastMouseScreen.x / this.camera.zoom / pixelRatio) + this.camera.x;
+                        mouseY = (this.lastMouseScreen.y / this.camera.zoom / pixelRatio) + this.camera.y;
+                    }
+                    this.socket.emit('split', { x: mouseX, y: mouseY });
                 }
-                this.socket.emit('split', { x: mouseX, y: mouseY });
             } 
             // Tecla W - Expulsar masa
             else if (e.key === 'w' || e.key === 'W') {
@@ -397,13 +580,22 @@ class Game {
             });
             const centerX = sumX / totalMass;
             const centerY = sumY / totalMass;
-            const maxRadius = Math.max(...player.cells.map(c => c.radius));
-            // Zoom automático estricto estilo Agar.io
-            let autoZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, Math.min(this.canvas.width, this.canvas.height) / (2.5 * Math.max(...player.cells.map(c => c.radius)))));
+            
+            // Zoom basado en la masa total del jugador, no en el radio de las células individuales
+            // Esto evita que el zoom se acerque demasiado cuando el jugador se divide
+            const masaTotal = player.cells.reduce((acc, cell) => acc + cell.mass, 0);
+            const radioEquivalente = Math.sqrt(masaTotal / Math.PI);
+            
+            // Zoom automático basado en masa total para mantener visión consistente
+            let autoZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, 
+                Math.min(this.canvas.width, this.canvas.height) / (2.8 * radioEquivalente)
+            ));
+            
             this.zoomRecommended = autoZoom;
-            this.userZoom += (autoZoom - this.userZoom) * 0.18;
+            this.userZoom += (autoZoom - this.userZoom) * 0.15;
             this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom));
             this.camera.zoom = this.userZoom;
+            
             const width = this.canvas.width / this.camera.zoom;
             const height = this.canvas.height / this.camera.zoom;
             this.camera.x = Math.max(0, Math.min(centerX - width / 2, WORLD_WIDTH - width));
@@ -566,14 +758,16 @@ class Game {
         let oldInfo = document.getElementById('overlay-info');
         if (oldInfo) oldInfo.remove();
         
-        // Mostrar información del jugador
+        // Mostrar información del jugador incluyendo número de células
         if (this.playerId && this.players[this.playerId]) {
-            let masa = Math.floor(this.players[this.playerId].mass);
+            const player = this.players[this.playerId];
+            let masa = Math.floor(player.mass);
+            const numeroCelulas = player.cells ? player.cells.length : 0;
             const now = performance.now();
             const fps = Math.round(1000 / (now - (this.lastFrameTime || now)));
             this.lastFrameTime = now;
             
-            let infoHtml = `<div style="position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 16px;border-radius:8px;font-family:sans-serif;z-index:1000;min-width:90px;">Masa: <b>${masa}</b><br>FPS: <b>${fps}</b><br>Ping: <b>${this.ping} ms</b></div>`;
+            let infoHtml = `<div style="position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 16px;border-radius:8px;font-family:sans-serif;z-index:1000;min-width:90px;">Masa: <b>${masa}</b><br>Células: <b>${numeroCelulas}/12</b><br>FPS: <b>${fps}</b><br>Ping: <b>${this.ping} ms</b></div>`;
             this.setOverlay('info', infoHtml);
         }
         this.drawMinimap(WORLD_WIDTH, WORLD_HEIGHT);
@@ -688,7 +882,7 @@ class Game {
         
         const descriptions = {
             speed: 'Velocidad x2',
-            shield: 'Inmune a comer',
+            shield: 'Inmune a ser comido',
             mass: 'Ganas masa extra',
             invisible: 'Invisible para otros',
             freeze: 'Congela a los rivales cercanos'

@@ -153,7 +153,29 @@ window.addEventListener('DOMContentLoaded', function() {
         if (mejorPuntuacion) mejorPuntuacion.textContent = localStorage.getItem('mejorPuntuacion') || '0';
         if (enemigosDerrotados) enemigosDerrotados.textContent = localStorage.getItem('enemigosDerrotados') || '0';
     }
+    
+    // Cargar progreso inicial
     cargarProgreso();
+    
+    // Actualizar progreso cada segundo para reflejar cambios en tiempo real
+    setInterval(cargarProgreso, 1000);
+    
+    // Actualizar progreso cuando se muestre el menú
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                const menuPrincipal = document.getElementById('menuPrincipal');
+                if (menuPrincipal && !menuPrincipal.classList.contains('hidden')) {
+                    setTimeout(cargarProgreso, 100);
+                }
+            }
+        });
+    });
+    
+    const menuPrincipal = document.getElementById('menuPrincipal');
+    if (menuPrincipal) {
+        observer.observe(menuPrincipal, { attributes: true });
+    }
 
     // Funciones para modos de juego
     function renderModosCarousel() {

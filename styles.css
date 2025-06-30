@@ -692,3 +692,69 @@ canvas {
     0% { background-position: 0% 50%; }
     100% { background-position: 100% 50%; }
 }
+
+/* Animaciones para notificaciones de progreso */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+@keyframes levelUp {
+    0% {
+        transform: translate(-50%, -50%) scale(0.5);
+        opacity: 0;
+    }
+    20% {
+        transform: translate(-50%, -50%) scale(1.2);
+        opacity: 1;
+    }
+    40% {
+        transform: translate(-50%, -50%) scale(1);
+    }
+    80% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes victory {
+    0% {
+        transform: translate(-50%, -50%) scale(0.3) rotate(-10deg);
+        opacity: 0;
+    }
+    20% {
+        transform: translate(-50%, -50%) scale(1.3) rotate(5deg);
+        opacity: 1;
+    }
+    40% {
+        transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    }
+    70% {
+        transform: translate(-50%, -50%) scale(1.05) rotate(0deg);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(0.9) rotate(0deg);
+        opacity: 0;
+    }
+}
