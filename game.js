@@ -76,21 +76,16 @@ class Game {
             this.bots = data.bots || [];
             this.powerUps = data.powerUps || [];
             this.virus = data.virus || [];
+            
             // Sincronizar los powerups activos con el servidor
             const player = this.players[this.playerId];
             if (player && player.activePowerUps) {
                 this.activePowerUps = { ...player.activePowerUps };
             }
             this.handlePowerUpPickup();
-            let muerto = false;
-            if (!player || !player.cells || player.cells.length === 0) {
-                muerto = true;
-            }
-            if (this.playerId && muerto && !this.isDead) {
-                this.isDead = true;
-                this.activePowerUps = {};
-                this.showDeathDialog();
-            }
+            
+            // El jugador siempre está vivo - respawn automático en servidor
+            this.isDead = false;
         });
         this.socket.on('chatMessage', (data) => {
             this.addChatMessage(data.name, data.msg);
@@ -140,62 +135,106 @@ class Game {
         }
     }
 
-    showDeathDialog() {
-        const deathDialog = document.getElementById('deathDialog');
-        deathDialog.classList.remove('hidden');
-        // Ocultar el canvas del juego para evitar congelamiento visual
+    /**
+     * Vuelve al menú principal desde el juego con limpieza completa
+     */
+    volverAlMenuPrincipal() {
+        // Limpiar overlays ANTES de cambiar la vista
+        this.limpiarOverlays();
+        
+        // Ocultar contenedor del juego
         if (this.gameContainer) {
             this.gameContainer.classList.add('hidden');
         }
-        // Guardar estadísticas al morir
-        if (window.playerProgress) {
-            const experienciaPorPartida = 50;
-            window.playerProgress.addExperiencia(experienciaPorPartida);
-        }
-        // Actualizar estadísticas en localStorage
-        const masaFinal = this.players[this.playerId]?.mass || 0;
-        const mejorPuntuacion = parseInt(localStorage.getItem('mejorPuntuacion') || '0', 10);
-        if (masaFinal > mejorPuntuacion) {
-            localStorage.setItem('mejorPuntuacion', Math.floor(masaFinal));
-        }
-        let enemigos = parseInt(localStorage.getItem('enemigosDerrotados') || '0', 10);
-        enemigos += this.players[this.playerId]?.enemigosDerrotados || 0;
-        localStorage.setItem('enemigosDerrotados', enemigos);
-        // Si el jugador fue el último en pie, sumar victoria
-        if (this.isWinner) {
-            let victorias = parseInt(localStorage.getItem('victorias') || '0', 10);
-            victorias++;
-            localStorage.setItem('victorias', victorias);
-        }
-        document.getElementById('revivirBtn').onclick = () => {
-            deathDialog.classList.add('hidden');
-            this.menuPrincipal = document.getElementById('menuPrincipal');
-            this.menuPrincipal.classList.add('hidden');
-            this.gameContainer.classList.remove('hidden');
-            this.isDead = false;
-            this.activePowerUps = {};
-            // Reiniciar jugador desde cero
-            this.socket.emit('join', {
-                name: document.getElementById('nombreJugador').value.trim() || 'Jugador',
-                mode: document.getElementById('modoJuego') ? document.getElementById('modoJuego').value : 'clasico',
-                skin: window.getSkinSeleccionada ? window.getSkinSeleccionada() : 'dragons.jpg',
-                reset: true // para que el servidor lo trate como nuevo
-            });
-        };
-        document.getElementById('salirMenuBtn').onclick = () => {
-            deathDialog.classList.add('hidden');
-            this.menuPrincipal = document.getElementById('menuPrincipal');
+        
+        // Mostrar menú principal
+        if (this.menuPrincipal) {
             this.menuPrincipal.classList.remove('hidden');
-            this.gameContainer.classList.add('hidden');
-            this.isDead = false;
-            this.activePowerUps = {};
-        };
+        }
+        
+        // Desconectar del servidor actual si está conectado
+        if (this.socket && this.isConnected) {
+            this.socket.disconnect();
+        }
+        
+        // Reiniciar estado del juego
+        this.isConnected = false;
+        this.playerId = null;
+        this.players = {};
+        this.foods = [];
+        this.bots = [];
+        this.powerUps = [];
+        this.activePowerUps = {};
+        this.isDead = false;
+        
+        // Limpiar overlays una segunda vez para asegurar limpieza completa
+        setTimeout(() => {
+            this.limpiarOverlays();
+        }, 100);
+        
+        // Reconectar socket para futuras partidas
+        this.socket = io();
+        this.setupSocketEvents();
+    }
+
+    /**
+     * Verifica si hay algún input con foco actualmente
+     */
+    isInputFocused() {
+        const activeElement = document.activeElement;
+        return activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' || 
+            activeElement.contentEditable === 'true'
+        );
+    }
+
+    /**
+     * Limpia todos los overlays del juego de forma exhaustiva
+     */
+    limpiarOverlays() {
+        // Lista completa de overlays que pueden existir
+        const overlaysIds = [
+            'overlay-leaderboard', 
+            'overlay-info', 
+            'overlay-powerups', 
+            'overlay-minimap',
+            'overlay-masa',
+            'overlay-stats'
+        ];
+        
+        // Eliminar overlays por ID
+        overlaysIds.forEach(id => {
+            const elemento = document.getElementById(id);
+            if (elemento) {
+                elemento.remove();
+            }
+        });
+        
+        // Buscar y eliminar cualquier overlay restante por clase o atributo
+        const overlaysRestantes = document.querySelectorAll('[id^="overlay-"]');
+        overlaysRestantes.forEach(elemento => {
+            elemento.remove();
+        });
+        
+        // Limpiar elementos específicos que pueden quedar
+        const elementosEspecificos = [
+            document.querySelector('canvas#overlay-minimap'),
+            document.querySelector('[style*="position:fixed"][style*="leaderboard"]'),
+            document.querySelector('[style*="position:fixed"][style*="Masa:"]')
+        ];
+        
+        elementosEspecificos.forEach(elemento => {
+            if (elemento) {
+                elemento.remove();
+            }
+        });
     }
 
     setupEventListeners() {
         document.getElementById('jugarBtn').addEventListener('click', () => {
             const playerName = document.getElementById('nombreJugador').value.trim() || 'Jugador';
-            const modoJuego = document.getElementById('modoJuego') ? document.getElementById('modoJuego').value : 'clasico';
+            const modoJuego = window.getModoSeleccionado ? window.getModoSeleccionado() : 'clasico';
             const skin = window.getSkinSeleccionada ? window.getSkinSeleccionada() : 'dragons.jpg';
             this.socket.emit('join', { name: playerName, mode: modoJuego, skin });
             this.menuPrincipal.classList.add('hidden');
@@ -214,6 +253,7 @@ class Game {
         this.chatActive = false;
         const chatInput = document.getElementById('chat-input');
         window.addEventListener('keydown', (e) => {
+            // Si el chat está activo, solo manejar eventos de chat
             if (document.activeElement === chatInput) {
                 if (e.key === 'Enter') {
                     if (chatInput.value.trim() !== '') {
@@ -227,13 +267,24 @@ class Game {
                 }
                 return;
             }
+            
+            // Tecla Z - Volver al menú principal
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                this.volverAlMenuPrincipal();
+                return;
+            }
+            
+            // Tecla Enter - Activar chat
             if (e.key === 'Enter') {
                 chatInput.focus();
                 this.chatActive = true;
                 e.preventDefault();
                 return;
             }
-            if (e.code === 'Space') {
+            
+            // Tecla Espacio - Dividir célula (solo si no está en un input)
+            if (e.code === 'Space' && !this.isInputFocused()) {
                 e.preventDefault();
                 let mouseX = 0, mouseY = 0;
                 if (this.lastMouseScreen) {
@@ -242,7 +293,9 @@ class Game {
                     mouseY = (this.lastMouseScreen.y / this.camera.zoom / pixelRatio) + this.camera.y;
                 }
                 this.socket.emit('split', { x: mouseX, y: mouseY });
-            } else if (e.key === 'w') {
+            } 
+            // Tecla W - Expulsar masa
+            else if (e.key === 'w' || e.key === 'W') {
                 if (!this.ejecting) {
                     this.ejecting = true;
                     this.ejectMassLoop();
@@ -250,7 +303,7 @@ class Game {
             }
         });
         window.addEventListener('keyup', (e) => {
-            if (e.key === 'w') {
+            if (e.key === 'w' || e.key === 'W') {
                 this.ejecting = false;
             }
         });
@@ -332,29 +385,32 @@ class Game {
         let minZoom = this.zoomMin;
         let maxZoom = this.zoomMax;
         let recommendedZoom = 1;
-        if (this.playerId && this.players[this.playerId] && !this.isDead) {
-            const player = this.players[this.playerId];
-            if (player.cells && player.cells.length > 0) {
-                let sumX = 0, sumY = 0, totalMass = 0;
-                player.cells.forEach(cell => {
-                    sumX += cell.x * cell.mass;
-                    sumY += cell.y * cell.mass;
-                    totalMass += cell.mass;
-                });
-                const centerX = sumX / totalMass;
-                const centerY = sumY / totalMass;
-                const maxRadius = Math.max(...player.cells.map(c => c.radius));
-                // Zoom automático estricto estilo Agar.io
-                let autoZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, Math.min(this.canvas.width, this.canvas.height) / (2.5 * Math.max(...player.cells.map(c => c.radius)))));
-                this.zoomRecommended = autoZoom;
-                this.userZoom += (autoZoom - this.userZoom) * 0.18;
-                this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom));
-                this.camera.zoom = this.userZoom;
-                const width = this.canvas.width / this.camera.zoom;
-                const height = this.canvas.height / this.camera.zoom;
-                this.camera.x = Math.max(0, Math.min(centerX - width / 2, WORLD_WIDTH - width));
-                this.camera.y = Math.max(0, Math.min(centerY - height / 2, WORLD_HEIGHT - height));
-            }
+        
+        // Renderizar siempre, incluso si está muerto, para evitar congelamiento
+        const player = this.players[this.playerId];
+        if (this.playerId && player && !this.isDead && player.cells && player.cells.length > 0) {
+            let sumX = 0, sumY = 0, totalMass = 0;
+            player.cells.forEach(cell => {
+                sumX += cell.x * cell.mass;
+                sumY += cell.y * cell.mass;
+                totalMass += cell.mass;
+            });
+            const centerX = sumX / totalMass;
+            const centerY = sumY / totalMass;
+            const maxRadius = Math.max(...player.cells.map(c => c.radius));
+            // Zoom automático estricto estilo Agar.io
+            let autoZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, Math.min(this.canvas.width, this.canvas.height) / (2.5 * Math.max(...player.cells.map(c => c.radius)))));
+            this.zoomRecommended = autoZoom;
+            this.userZoom += (autoZoom - this.userZoom) * 0.18;
+            this.userZoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.userZoom));
+            this.camera.zoom = this.userZoom;
+            const width = this.canvas.width / this.camera.zoom;
+            const height = this.canvas.height / this.camera.zoom;
+            this.camera.x = Math.max(0, Math.min(centerX - width / 2, WORLD_WIDTH - width));
+            this.camera.y = Math.max(0, Math.min(centerY - height / 2, WORLD_HEIGHT - height));
+        } else if (this.isDead) {
+            // Mantener cámara estática cuando está muerto para evitar saltos visuales
+            this.camera.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.camera.zoom));
         }
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         let grad = this.ctx.createLinearGradient(0, 0, this.canvas.width, this.canvas.height);
@@ -415,12 +471,15 @@ class Game {
                 this.ctx.fillStyle = player.color || '#0ff';
                 this.ctx.fill();
             }
-            if (player.mode === 'equipo' && player.team) {
+            // Borde de equipo para modos de equipo
+            if ((player.mode === 'equipo' || player.mode === 'equipos') && player.team) {
                 this.ctx.save();
-                this.ctx.lineWidth = 8;
+                this.ctx.lineWidth = 6;
                 this.ctx.strokeStyle = player.team === 'rojo' ? '#ff3860' : '#0099ff';
+                this.ctx.shadowColor = player.team === 'rojo' ? '#ff3860' : '#0099ff';
+                this.ctx.shadowBlur = 12;
                 this.ctx.beginPath();
-                this.ctx.arc(cell.x, cell.y, cell.radius + 3, 0, Math.PI * 2);
+                this.ctx.arc(cell.x, cell.y, cell.radius + 4, 0, Math.PI * 2);
                 this.ctx.stroke();
                 this.ctx.restore();
             }
@@ -487,27 +546,33 @@ class Game {
             }
         }
         this.ctx.restore();
-        let leaderboard = Object.values(this.players)
-            .sort((a, b) => b.mass - a.mass)
-            .slice(0, 8);
-        let leaderboardHtml = '<div style="position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.6);color:#fff;padding:10px 18px;border-radius:8px;font-family:sans-serif;z-index:1000;">';
-        leaderboardHtml += '<b>Leaderboard</b><br>';
-        leaderboard.forEach((p, i) => {
-            leaderboardHtml += `${i + 1}. ${p.name} (${Math.floor(p.mass)})<br>`;
-        });
-        leaderboardHtml += '</div>';
-        this.setOverlay('leaderboard', leaderboardHtml);
+        // Solo mostrar leaderboard si hay jugador activo
+        if (this.playerId && this.players[this.playerId]) {
+            let leaderboard = Object.values(this.players)
+                .sort((a, b) => b.mass - a.mass)
+                .slice(0, 8);
+            let leaderboardHtml = '<div style="position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.6);color:#fff;padding:10px 18px;border-radius:8px;font-family:sans-serif;z-index:1000;">';
+            leaderboardHtml += '<b>Leaderboard</b><br>';
+            leaderboard.forEach((p, i) => {
+                leaderboardHtml += `${i + 1}. ${p.name} (${Math.floor(p.mass)})<br>`;
+            });
+            leaderboardHtml += '</div>';
+            this.setOverlay('leaderboard', leaderboardHtml);
+        }
         let oldMasa = document.getElementById('overlay-masa');
         if (oldMasa) oldMasa.remove();
         let oldStats = document.getElementById('overlay-stats');
         if (oldStats) oldStats.remove();
         let oldInfo = document.getElementById('overlay-info');
         if (oldInfo) oldInfo.remove();
+        
+        // Mostrar información del jugador
         if (this.playerId && this.players[this.playerId]) {
             let masa = Math.floor(this.players[this.playerId].mass);
             const now = performance.now();
             const fps = Math.round(1000 / (now - (this.lastFrameTime || now)));
             this.lastFrameTime = now;
+            
             let infoHtml = `<div style="position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.6);color:#fff;padding:8px 16px;border-radius:8px;font-family:sans-serif;z-index:1000;min-width:90px;">Masa: <b>${masa}</b><br>FPS: <b>${fps}</b><br>Ping: <b>${this.ping} ms</b></div>`;
             this.setOverlay('info', infoHtml);
         }
@@ -516,6 +581,11 @@ class Game {
     }
 
     drawMinimap(WORLD_WIDTH, WORLD_HEIGHT) {
+        // No renderizar minimapa si no hay jugador activo
+        if (!this.playerId || !this.players[this.playerId]) {
+            return;
+        }
+        
         const size = 180;
         const padding = 12;
         const x = window.innerWidth - size - padding;
@@ -556,7 +626,9 @@ class Game {
                 player.cells.forEach(cell => {
                     ctx.beginPath();
                     ctx.arc(cell.x * scale, cell.y * scale, 5, 0, Math.PI * 2);
-                    if (player.mode === 'equipo' && player.team && player.mode === this.players[this.playerId]?.mode) {
+                    
+                    // Colores de equipo en el minimapa
+                    if ((player.mode === 'equipo' || player.mode === 'equipos') && player.team) {
                         ctx.fillStyle = player.team === 'rojo' ? '#ff3860' : '#0099ff';
                     } else {
                         ctx.fillStyle = player.id === this.playerId ? '#0ff' : (player.color || '#fff');
@@ -580,9 +652,13 @@ class Game {
         el.innerHTML = html;
     }
 
+    /**
+     * Renderiza los power-ups activos del jugador
+     */
     renderActivePowerUps() {
         const containerId = 'overlay-powerups';
         let el = document.getElementById(containerId);
+        
         if (!el) {
             el = document.createElement('div');
             el.id = containerId;
@@ -599,6 +675,7 @@ class Game {
             el.style.alignItems = 'center';
             document.body.appendChild(el);
         }
+        
         el.innerHTML = '';
         const now = Date.now();
         const icons = {
@@ -608,7 +685,7 @@ class Game {
             invisible: '👻',
             freeze: '❄️'
         };
-        // Mostrar todos los powerups activos con su tiempo restante y descripción
+        
         const descriptions = {
             speed: 'Velocidad x2',
             shield: 'Inmune a comer',
@@ -616,6 +693,7 @@ class Game {
             invisible: 'Invisible para otros',
             freeze: 'Congela a los rivales cercanos'
         };
+        
         Object.entries(this.activePowerUps).forEach(([type, endTime]) => {
             if (endTime > now) {
                 const segs = Math.ceil((endTime - now) / 1000);
@@ -629,10 +707,11 @@ class Game {
                 div.style.fontWeight = 'bold';
                 div.style.fontSize = '1.3em';
                 div.style.textShadow = '0 0 8px #00fff7, 0 0 12px #ff00e6';
-                div.innerHTML = `<span style=\"font-size:2em;\">${icons[type] || '?'}<\/span><span style=\"font-size:0.9em;\">${segs}s<\/span><span style=\"font-size:0.7em;\">${descriptions[type] || ''}<\/span>`;
+                div.innerHTML = `<span style="font-size:2em;">${icons[type] || '?'}</span><span style="font-size:0.9em;">${segs}s</span><span style="font-size:0.7em;">${descriptions[type] || ''}</span>`;
                 el.appendChild(div);
             }
         });
+        
         el.style.display = Object.values(this.activePowerUps).some(end => end > now) ? 'flex' : 'none';
     }
 }

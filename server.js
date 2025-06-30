@@ -81,6 +81,9 @@ function createPowerUp() {
   };
 }
 
+/**
+ * Crea una nueva célula con propiedades iniciales
+ */
 function createCell(x, y, mass, color, skin) {
   return {
     id: Math.random().toString(36).substr(2, 9),
@@ -94,9 +97,82 @@ function createCell(x, y, mass, color, skin) {
     splitCooldown: 0,
     ejectCooldown: 0,
     canMerge: false,
-    mergeTimer: 10000, // 10 segundos para merge individual
+    mergeTimer: 10000,
     skin: skin || ''
   };
+}
+
+/**
+ * Genera una posición de spawn aleatoria que no colisione con otros jugadores
+ */
+function generarPosicionSpawnSegura(mundo, radioMinimo = 50) {
+  const maxIntentos = 50;
+  let intentos = 0;
+  
+  while (intentos < maxIntentos) {
+    const x = radioMinimo + Math.random() * (WORLD_WIDTH - 2 * radioMinimo);
+    const y = radioMinimo + Math.random() * (WORLD_HEIGHT - 2 * radioMinimo);
+    
+    let posicionSegura = true;
+    
+    // Verificar colisión con otros jugadores
+    for (const jugador of Object.values(mundo.players)) {
+      if (jugador.cells && jugador.cells.length > 0) {
+        for (const celula of jugador.cells) {
+          const distancia = Math.sqrt((x - celula.x) ** 2 + (y - celula.y) ** 2);
+          const distanciaMinima = radioMinimo + celula.radius + 100; // Margen de seguridad
+          
+          if (distancia < distanciaMinima) {
+            posicionSegura = false;
+            break;
+          }
+        }
+        if (!posicionSegura) break;
+      }
+    }
+    
+    // Verificar colisión con bots
+    for (const bot of mundo.bots) {
+      const distancia = Math.sqrt((x - bot.x) ** 2 + (y - bot.y) ** 2);
+      const distanciaMinima = radioMinimo + bot.radius + 80;
+      
+      if (distancia < distanciaMinima) {
+        posicionSegura = false;
+        break;
+      }
+    }
+    
+    if (posicionSegura) {
+      return { x, y };
+    }
+    
+    intentos++;
+  }
+  
+  // Si no se encuentra posición segura, usar una posición aleatoria básica
+  return {
+    x: radioMinimo + Math.random() * (WORLD_WIDTH - 2 * radioMinimo),
+    y: radioMinimo + Math.random() * (WORLD_HEIGHT - 2 * radioMinimo)
+  };
+}
+
+/**
+ * Respawnea un jugador en una posición segura
+ */
+function respawnearJugador(mundo, jugador) {
+  const posicionSegura = generarPosicionSpawnSegura(mundo);
+  const nuevaCelula = createCell(
+    posicionSegura.x,
+    posicionSegura.y,
+    3800,
+    jugador.color,
+    jugador.skin
+  );
+  
+  jugador.cells = [nuevaCelula];
+  jugador.activePowerUps = {};
+  
+  return jugador;
 }
 
 function distance(a, b) {
@@ -173,8 +249,8 @@ function gameLoop() {
       moveTowards(bot, bot.target, bot.speed);
     });
     Object.values(mundo.players).forEach(player => {
-      // Asignar equipos en modo equipos
-      if (modo === 'equipos' && !player.team) {
+      // Asignar equipos en modo equipos o equipo
+      if ((modo === 'equipos' || modo === 'equipo') && !player.team) {
         player.team = Math.random() < 0.5 ? 'rojo' : 'azul';
       }
       player.cells.forEach(cell => {
@@ -374,14 +450,17 @@ function gameLoop() {
         if (i !== j) {
           const a = playerList[i];
           const b = playerList[j];
-          // Lógica de modos
-          // SelfFeed: ahora sí pueden comerse entre sí
-          // Equipos: no colisionan entre sí
-          if ((a.mode === 'equipo' || a.mode === 'equipos' || modo === 'equipos') && (b.mode === 'equipo' || b.mode === 'equipos' || modo === 'equipos') && a.team === b.team) continue;
+          
+          // Equipos del mismo color no pueden comerse entre sí
+          if ((modo === 'equipos' || modo === 'equipo') && a.team && b.team && a.team === b.team) {
+            continue;
+          }
+          
           // Party: solo colisionan si tienen el mismo partyId o ambos no tienen partyId
           if (a.mode === 'party' && b.mode === 'party') {
             if (a.partyId && b.partyId && a.partyId !== b.partyId) continue;
           }
+          
           a.cells.forEach(cellA => {
             b.cells.forEach(cellB => {
               // Si el defensor tiene escudo, no puede ser comido
@@ -396,9 +475,12 @@ function gameLoop() {
         }
       }
     }
+    
+    // Respawnear jugadores que han perdido todas sus células
     Object.keys(mundo.players).forEach(pid => {
-      if (mundo.players[pid].cells.length === 0) {
-        delete mundo.players[pid];
+      const jugador = mundo.players[pid];
+      if (jugador.cells.length === 0) {
+        respawnearJugador(mundo, jugador);
       }
     });
     if (playerList.some(p => p.mode === 'batalla' && p.cells.reduce((acc, c) => acc + c.mass, 0) > 50000)) {
@@ -455,19 +537,38 @@ io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const modo = MODOS.includes(data.mode) ? data.mode : 'clasico';
     const mundo = mundos[modo];
-    let nombre = typeof data.name === 'string' ? data.name.trim().substring(0, 15) : 'Jugador';
+    // Validar y limpiar nombre del jugador permitiendo espacios
+    let nombre = 'Jugador';
+    if (typeof data.name === 'string') {
+      nombre = data.name
+        .trim()
+        .replace(/\s{2,}/g, ' ') // Reemplazar múltiples espacios consecutivos por uno solo
+        .substring(0, 15);
+      
+      // Si el nombre queda vacío después de la limpieza, usar nombre por defecto
+      if (!nombre || nombre.length === 0) {
+        nombre = 'Jugador';
+      }
+    }
+    
     let skin = typeof data.skin === 'string' ? data.skin : '';
     const color = randomColor();
+    
     // Lógica de equipos y party
     let team = null;
     if (modo === 'equipos' || modo === 'equipo') {
       team = Math.random() < 0.5 ? 'rojo' : 'azul';
     }
+    
     // Party: asignar una partyId si se provee
     let partyId = null;
     if (modo === 'party' && typeof data.partyId === 'string') {
       partyId = data.partyId;
     }
+    
+    // Generar posición de spawn segura
+    const posicionSpawn = generarPosicionSpawnSegura(mundo);
+    
     mundo.players[socket.id] = {
       id: socket.id,
       name: nombre,
@@ -477,7 +578,7 @@ io.on('connection', (socket) => {
       mode: modo,
       partyId: partyId,
       target: null,
-      cells: [createCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, 3800, color, skin)],
+      cells: [createCell(posicionSpawn.x, posicionSpawn.y, 3800, color, skin)],
       activePowerUps: {}
     };
     socket.modo = modo;
@@ -497,7 +598,7 @@ io.on('connection', (socket) => {
     if (player && data && typeof data.x === 'number' && typeof data.y === 'number') {
       let newCells = [];
       player.cells.forEach(cell => {
-        if (cell.mass >= 3800) {
+        if (cell.mass >= 1200) {
           // Calcular ángulo real hacia el mouse
           const dx = data.x - cell.x;
           const dy = data.y - cell.y;
