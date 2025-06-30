@@ -2,13 +2,39 @@ const express = require('express');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
+const { initKeepAlive } = require('./keep-alive');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname)));
+
+// Rutas principales
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'Gloobix.io.html'));
+});
+
+// Inicializar keep-alive service
+const keepAlive = initKeepAlive({
+  serverUrl: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`,
+  verbose: process.env.NODE_ENV !== 'production'
+});
+
+// Endpoints de monitoreo y salud
+app.get('/health', keepAlive.getHealthMiddleware());
+app.get('/stats', keepAlive.getStatsMiddleware());
+
+// Endpoint adicional para verificar estado del servidor
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    version: process.version,
+    platform: process.platform,
+    players: Object.values(mundos).reduce((total, mundo) => total + Object.keys(mundo.players).length, 0)
+  });
 });
 
 const server = http.createServer(app);
@@ -765,5 +791,15 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor Gloobix.io iniciado en puerto ${PORT}`);
+  console.log(`📡 Endpoints disponibles:`);
+  console.log(`   - Juego: http://localhost:${PORT}`);
+  console.log(`   - Salud: http://localhost:${PORT}/health`);
+  console.log(`   - Stats: http://localhost:${PORT}/stats`);
+  console.log(`   - Estado: http://localhost:${PORT}/api/status`);
+  
+  if (process.env.RENDER_EXTERNAL_URL) {
+    console.log(`🌐 URL externa: ${process.env.RENDER_EXTERNAL_URL}`);
+    console.log(`✅ Keep-Alive activado para Render.com`);
+  }
 });

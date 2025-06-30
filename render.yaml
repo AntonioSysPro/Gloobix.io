@@ -1,3 +1,4 @@
+# Configuración de despliegue para Render.com
 services:
   - type: web
     name: gloobix-io
@@ -5,11 +6,11 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
-    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
-    
-    # Puerto por defecto para Node.js en Render
-    # Render expone el puerto en process.env.PORT
-    # El server.js debe usar process.env.PORT o 3000 por defecto
+      - key: PING_INTERVAL
+        value: 840000  # 14 minutos en milisegundos
+    healthCheckPath: /health
+    autoDeploy: true
+    branch: main
